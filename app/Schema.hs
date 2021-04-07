@@ -28,6 +28,15 @@ data Point = Point {
 
 instance FromJSON Point
 
+data Rectangle = Rectangle {
+      lo :: Maybe Point
+    , hi :: Maybe Point
+    } deriving (
+      Eq, Show, Generic
+    , ToSchema   TheSchema "Rectangle"
+    , FromSchema TheSchema "Rectangle"
+    )
+
 data Feature = Feature {
       name     :: T.Text
     , location :: Maybe Point

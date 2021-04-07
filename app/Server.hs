@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# OPTIONS_GHC -fno-warn-partial-type-signatures #-}
 
-module Main where
+module Main (main) where
 
 import           Control.Exception.Safe
     ( MonadThrow
@@ -20,6 +20,8 @@ import           Control.Monad.IO.Class ( MonadIO, liftIO )
 import           Control.Monad.Reader   ( MonadReader, ask, runReaderT )
 import           Data.Aeson             ( eitherDecodeStrict' )
 import qualified Data.ByteString        as B
+import           Data.Conduit           ( ConduitT, Void, runConduit, (.|) )
+import qualified Data.Conduit.List      as CL
 import           Mu.GRpc.Server         ( msgProtoBuf, runGRpcAppTrans )
 import           Mu.Server
     ( MonadServer
@@ -43,7 +45,10 @@ main = do
 server
     :: (MonadServer m, MonadReader [S.Feature] m)
     => SingleServerT i S.RouteGuide m _
-server = singleService (method @"GetFeature" getFeature)
+server = singleService (
+      method @"GetFeature" getFeature
+    , method @"ListFeatures" listFeatures
+    )
 
 getFeature
     :: (MonadServer m, MonadReader [S.Feature] m)
@@ -53,6 +58,17 @@ getFeature p = do
     case filter ((== Just p) . location) fs of
         []  -> pure $ Feature "" (Just p)
         f:_ -> pure f
+
+listFeatures
+    :: (MonadServer m, MonadReader [S.Feature] m)
+    => S.Rectangle -> ConduitT Feature Void m () -> m ()
+listFeatures r sink = do
+    fs <- ask
+    runConduit $ CL.sourceList fs .| CL.filter inRectangle .| sink
+        where
+            inRectangle f = case location f of
+                Nothing -> False
+                Just p  -> inRange r p
 
 loadFeatures
     :: (MonadThrow m, MonadIO m)
@@ -73,3 +89,15 @@ decodeFeatures
 decodeFeatures bs = case eitherDecodeStrict' bs of
     Left err -> throwString $ "failed to load default features: " ++ err
     Right fs -> pure fs
+
+inRange :: S.Rectangle -> S.Point -> Bool
+inRange r p = case (lo r, hi r) of
+    (Just l, Just h) ->
+        left <= longitude p && longitude p <= right &&
+        bottom <= latitude p  && latitude p <= top
+            where
+                left = longitude l `min` longitude h
+                right = longitude l `max` longitude h
+                bottom = latitude l `min` latitude h
+                top = latitude l `max` latitude h
+    (_, _) -> False

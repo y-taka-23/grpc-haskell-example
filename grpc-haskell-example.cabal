@@ -24,6 +24,7 @@ executable server
       base            >=4.12  && <5
     , aeson
     , bytestring
+    , conduit
     , directory
     , mtl
     , mu-grpc-server  >=0.4.0
