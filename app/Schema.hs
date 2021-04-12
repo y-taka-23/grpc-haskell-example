@@ -28,7 +28,7 @@ data Point = Point {
       latitude  :: Int32
     , longitude :: Int32
     } deriving (
-      Eq, Show, Generic
+      Eq, Show, Ord, Generic
     , ToSchema   TheSchema "Point"
     , FromSchema TheSchema "Point"
     )
@@ -54,6 +54,23 @@ data Feature = Feature {
     )
 
 instance FromJSON Feature
+
+data RouteNote = RouteNote {
+      noteLocation :: Maybe Point
+    , noteMessage  :: T.Text
+    } deriving (
+      Eq, Show, Generic
+    ) deriving (
+      ToSchema   TheSchema "RouteNote"
+    , FromSchema TheSchema "RouteNote"
+    ) via (
+      CustomFieldMapping "RouteNote" RouteNoteFieldMapping RouteNote
+    )
+
+type RouteNoteFieldMapping = '[
+      "noteLocation" ':-> "location"
+    , "noteMessage" ':-> "message"
+    ]
 
 data RouteSummary = RouteSummary {
       pointCount   :: Int32
