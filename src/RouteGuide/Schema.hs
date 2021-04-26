@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeFamilies    #-}
 {-# LANGUAGE TypeOperators   #-}
 
-module Schema where
+module RouteGuide.Schema where
 
 import Data.Aeson   ( FromJSON )
 import Data.Text    as T

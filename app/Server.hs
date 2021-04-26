@@ -49,7 +49,7 @@ import           Prelude                  hiding ( readFile )
 import           System.Directory         ( doesFileExist )
 import           System.Exit              ( die )
 
-import qualified Schema as S
+import qualified RouteGuide.Schema as S
 
 main :: IO ()
 main = do
