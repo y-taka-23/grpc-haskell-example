@@ -47,6 +47,13 @@ packages:
   original:
     hackage: mu-grpc-server-0.4.0.0
 - completed:
+    hackage: mu-grpc-client-0.4.0.0@sha256:638316eb647b09203b6d1822fc24ce6f641d9ee704af536da08626d7067fbe3d,1967
+    pantry-tree:
+      size: 562
+      sha256: d77529d7c434e4c66871ef83524ed215d7204a84e927980efc58898e93f0a82e
+  original:
+    hackage: mu-grpc-client-0.4.0.0
+- completed:
     hackage: mu-grpc-common-0.4.0.0@sha256:568b5879cd67c0bc0e956d53fb87552bb6d9a6287c5d1b09e2284ed5b04de418,1394
     pantry-tree:
       size: 281
@@ -67,6 +74,13 @@ packages:
       sha256: d7a1be66eb14e84cfedd87e8363e406abb244bb74b742e8f0141efce27545008
   original:
     hackage: http2-client-0.9.0.0
+- completed:
+    hackage: http2-client-grpc-0.8.0.0@sha256:5bea1edf5fa3572155f55c5b38cfab7063cbde613702898986c26d70bc9f3f9e,1861
+    pantry-tree:
+      size: 454
+      sha256: 234f9a5e2c117c615b63b657af6b331df0533e173d09f0c91b279ac90c54d4de
+  original:
+    hackage: http2-client-grpc-0.8.0.0
 - completed:
     hackage: http2-grpc-types-0.5.0.0@sha256:4d34edc06a48496130f19245817a7cd7ea15c78ac8815570c3795ffc4503cf27,1445
     pantry-tree:
