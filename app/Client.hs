@@ -3,7 +3,9 @@
 
 module Main (main) where
 
-import Mu.GRpc.Client.TyApps
+import           Data.Conduit             ( ConduitT, runConduit, (.|) )
+import qualified Data.Conduit.Combinators as CC
+import           Mu.GRpc.Client.TyApps
     ( GRpcMessageProtocol(MsgProtoBuf)
     , GRpcReply(GRpcOk)
     , GrpcClient
@@ -11,7 +13,7 @@ import Mu.GRpc.Client.TyApps
     , grpcClientConfigSimple
     , setupGrpcClient'
     )
-import System.Exit           ( die )
+import           System.Exit              ( die )
 
 import qualified RouteGuide.Schema as S
 
@@ -24,14 +26,28 @@ main = do
         Right client -> do
             printFeature client $ S.Point 409146138 (-746188906)
             printFeature client $ S.Point 0 0
+            printFeatures client $ S.Rectangle
+                (Just (S.Point 400000000 (-750000000)))
+                (Just (S.Point 420000000 (-730000000)))
 
 printFeature :: GrpcClient -> S.Point -> IO ()
 printFeature client p = do
     putStrLn $ "Getting feature for " ++ show p
-    response <- getFeature client p
-    case response of
-        GRpcOk feature -> putStrLn $ show feature
-        err            -> die $ show err
+    printGRpcReply =<< getFeature client p
+
+printFeatures :: GrpcClient -> S.Rectangle -> IO ()
+printFeatures client r = do
+    putStrLn $ "Looking for features within " ++ show r
+    responses <- listFeatures client r
+    runConduit $ responses .| CC.mapM_ printGRpcReply
 
 getFeature :: GrpcClient -> S.Point -> IO (GRpcReply S.Feature)
 getFeature = gRpcCall @'MsgProtoBuf @S.RouteGuide @"RouteGuide" @"GetFeature"
+
+listFeatures :: GrpcClient -> S.Rectangle -> IO (ConduitT () (GRpcReply S.Feature) IO ())
+listFeatures = gRpcCall @'MsgProtoBuf @S.RouteGuide @"RouteGuide" @"ListFeatures"
+
+printGRpcReply :: (Show a) => GRpcReply a -> IO ()
+printGRpcReply reply = case reply of
+    GRpcOk item -> putStrLn $ show item
+    err         -> die $ show err
