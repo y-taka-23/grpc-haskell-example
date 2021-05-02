@@ -28,7 +28,7 @@ import qualified RouteGuide.Schema as S
 
 main :: IO ()
 main = do
-    let config = grpcClientConfigSimple "127.0.0.1" 10000 False
+    let config = grpcClientConfigSimple "localhost" 10000 True
     setup <- setupGrpcClient' config
     case setup of
         Left err -> die $ show err

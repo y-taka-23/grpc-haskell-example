@@ -22,40 +22,53 @@ import           Control.Exception.Safe
     , displayException
     , throwString
     )
-import           Control.Monad            ( when )
-import           Control.Monad.IO.Class   ( MonadIO, liftIO )
-import           Control.Monad.Reader     ( MonadReader, ask, runReaderT )
-import           Data.Aeson               ( eitherDecodeStrict' )
-import qualified Data.ByteString          as B
-import           Data.Conduit             ( ConduitT, Void, runConduit, (.|) )
-import qualified Data.Conduit.Combinators as CC
-import qualified Data.Conduit.List        as CL
-import           Data.List                ( find )
-import qualified Data.Map                 as M
-import           Data.Maybe               ( isJust )
+import           Control.Monad               ( when )
+import           Control.Monad.IO.Class      ( MonadIO, liftIO )
+import           Control.Monad.Reader        ( MonadReader, ask, runReaderT )
+import           Data.Aeson                  ( eitherDecodeStrict' )
+import qualified Data.ByteString             as B
+import           Data.Conduit
+    ( ConduitT
+    , Void
+    , runConduit
+    , (.|)
+    )
+import qualified Data.Conduit.Combinators    as CC
+import qualified Data.Conduit.List           as CL
+import           Data.List                   ( find )
+import qualified Data.Map                    as M
+import           Data.Maybe                  ( isJust )
 import           Data.Time
     ( diffUTCTime
     , getCurrentTime
     , nominalDiffTimeToSeconds
     )
-import           Mu.GRpc.Server           ( msgProtoBuf, runGRpcAppTrans )
+import           Mu.GRpc.Server              ( msgProtoBuf, runGRpcAppTLS )
 import           Mu.Server
     ( MonadServer
     , SingleServerT
     , method
     , singleService
     )
-import           Prelude                  hiding ( readFile )
-import           System.Directory         ( doesFileExist )
-import           System.Exit              ( die )
+import           Network.Wai.Handler.Warp
+    ( defaultSettings
+    , setHost
+    , setPort
+    )
+import           Network.Wai.Handler.WarpTLS ( tlsSettings )
+import           Prelude                     hiding ( readFile )
+import           System.Directory            ( doesFileExist )
+import           System.Exit                 ( die )
 
 import qualified RouteGuide.Schema as S
 
 main :: IO ()
 main = do
+    let tls = tlsSettings "x509/localhost_cert.pem" "x509/localhost_key.pem"
+    let stg = setHost "localhost" $ setPort 10000 $ defaultSettings
     fs <- loadFeatures "route_guide_db.json" `catch` fatal
     nsv <- atomically $ newTVar M.empty
-    runGRpcAppTrans msgProtoBuf 10000 (flip runReaderT (Server fs nsv)) server
+    runGRpcAppTLS msgProtoBuf tls stg (flip runReaderT (Server fs nsv)) server
         where
             fatal = (\(e :: SomeException) -> die $ displayException e)
 

@@ -57,3 +57,5 @@ executable server
     , safe-exceptions
     , stm
     , time
+    , warp
+    , warp-tls
