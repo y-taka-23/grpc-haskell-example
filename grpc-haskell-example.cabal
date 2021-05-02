@@ -36,6 +36,7 @@ executable client
     , grpc-haskell-example
     , conduit
     , mu-grpc-client  >=0.4.0
+    , optparse-applicative
     , random
 
 executable server

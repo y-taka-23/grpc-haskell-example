@@ -16,6 +16,21 @@ import           Mu.GRpc.Client.TyApps
     , grpcClientConfigSimple
     , setupGrpcClient'
     )
+import           Options.Applicative
+    ( Parser
+    , auto
+    , execParser
+    , help
+    , helper
+    , idm
+    , info
+    , long
+    , metavar
+    , option
+    , strOption
+    , switch
+    , value
+    )
 import           System.Exit              ( die )
 import           System.Random
     ( RandomGen
@@ -28,7 +43,13 @@ import qualified RouteGuide.Schema as S
 
 main :: IO ()
 main = do
-    let config = grpcClientConfigSimple "localhost" 10000 True
+    runClient =<< execParser parser
+        where
+            parser = info (helper <*> options) idm
+
+runClient :: Options -> IO ()
+runClient opts = do
+    let config = grpcClientConfigSimple (host opts) (fromIntegral $ port opts) (tls opts)
     setup <- setupGrpcClient' config
     case setup of
         Left err -> die $ show err
@@ -39,6 +60,24 @@ main = do
                 (Just (S.Point 400000000 (-750000000)))
                 (Just (S.Point 420000000 (-730000000)))
             runRecordRoute client
+
+data Options = Options {
+      tls  :: Bool
+    , host :: String
+    , port :: Int
+    }
+
+options :: Parser Options
+options = Options <$>
+        switch (
+               long "tls"
+            <> help "Connection uses TLS if true, else plain TCP")
+    <*> strOption (
+               long "host" <>  metavar "string" <> value "localhost"
+            <> help "The server host")
+    <*> option auto (
+               long "port" <>  metavar "int" <> value 10000
+            <> help "The server port")
 
 printFeature :: GrpcClient -> S.Point -> IO ()
 printFeature client p = do
