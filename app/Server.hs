@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
@@ -38,12 +37,17 @@ import qualified Data.Conduit.List           as CL
 import           Data.List                   ( find )
 import qualified Data.Map                    as M
 import           Data.Maybe                  ( isJust )
+import           Data.String                 ( fromString )
 import           Data.Time
     ( diffUTCTime
     , getCurrentTime
     , nominalDiffTimeToSeconds
     )
-import           Mu.GRpc.Server              ( msgProtoBuf, runGRpcAppTLS )
+import           Mu.GRpc.Server
+    ( msgProtoBuf
+    , runGRpcAppSettings
+    , runGRpcAppTLS
+    )
 import           Mu.Server
     ( MonadServer
     , SingleServerT
@@ -55,7 +59,22 @@ import           Network.Wai.Handler.Warp
     , setHost
     , setPort
     )
-import           Network.Wai.Handler.WarpTLS ( tlsSettings )
+import           Network.Wai.Handler.WarpTLS ( TLSSettings, tlsSettingsMemory )
+import           Options.Applicative
+    ( Parser
+    , auto
+    , execParser
+    , help
+    , helper
+    , idm
+    , info
+    , long
+    , metavar
+    , option
+    , strOption
+    , switch
+    , value
+    )
 import           Prelude                     hiding ( readFile )
 import           System.Directory            ( doesFileExist )
 import           System.Exit                 ( die )
@@ -63,14 +82,51 @@ import           System.Exit                 ( die )
 import qualified RouteGuide.Schema as S
 
 main :: IO ()
-main = do
-    let tls = tlsSettings "x509/localhost_cert.pem" "x509/localhost_key.pem"
-    let stg = setHost "localhost" $ setPort 10000 $ defaultSettings
-    fs <- loadFeatures "route_guide_db.json" `catch` fatal
+main = runServer =<< execParser parser
+    where
+        parser = info (helper <*> options) idm
+
+runServer :: Options -> IO ()
+runServer opts = do
+    let stg = setHost (fromString $ host opts) $ setPort (port opts) $ defaultSettings
+    let fatal =  \(e :: SomeException) -> die $ displayException e
+    fs <- loadFeatures (jsonDBFile opts) `catch` fatal
     nsv <- atomically $ newTVar M.empty
-    runGRpcAppTLS msgProtoBuf tls stg (flip runReaderT (Server fs nsv)) server
-        where
-            fatal = (\(e :: SomeException) -> die $ displayException e)
+    if tls opts then do
+        cred <- loadTLSSettings (certFile opts) (keyFile opts) `catch` fatal
+        runGRpcAppTLS msgProtoBuf cred stg (flip runReaderT (Server fs nsv)) server
+    else do
+        runGRpcAppSettings msgProtoBuf stg (flip runReaderT (Server fs nsv)) server
+
+data Options = Options {
+      tls        :: Bool
+    , certFile   :: FilePath
+    , keyFile    :: FilePath
+    , jsonDBFile :: FilePath
+    , host       :: String
+    , port       :: Int
+    }
+
+options :: Parser Options
+options = Options <$>
+        switch (
+               long "tls"
+            <> help "Connection uses TLS if true, else plain TCP")
+    <*> strOption (
+               long "cert_file" <> metavar "string" <> value ""
+            <> help "The TLS cert file")
+    <*> strOption (
+               long "key_file" <> metavar "string" <> value ""
+            <> help "The TLS key file")
+    <*> strOption (
+               long "json_db_file" <>  metavar "string" <> value "route_guide_db.json"
+            <> help "A json file containing a list of features")
+    <*> strOption (
+               long "host" <>  metavar "string" <> value "localhost"
+            <> help "The server host")
+    <*> option auto (
+               long "port" <>  metavar "int" <> value 10000
+            <> help "The server port")
 
 server
     :: (MonadServer m, MonadReader Server m)
@@ -96,7 +152,7 @@ getFeature
 getFeature p = do
     fs <- savedFeatures <$> ask
     case filter ((== Just p) . S.location) fs of
-        []  -> pure $ S.Feature "" (Just p)
+        []  -> pure $ S.Feature (fromString "") (Just p)
         f:_ -> pure f
 
 listFeatures
@@ -143,14 +199,21 @@ routeChat src sink = do
 loadFeatures
     :: (MonadThrow m, MonadIO m)
     => FilePath -> m Features
-loadFeatures fp = readFile fp >>= decodeFeatures
+loadFeatures fp = do
+    readFile "json db file" fp >>= decodeFeatures
+
+loadTLSSettings
+    :: (MonadThrow m, MonadIO m)
+    => FilePath -> FilePath -> m TLSSettings
+loadTLSSettings cert key =
+    tlsSettingsMemory <$> readFile "cert file" cert <*> readFile "key file" key
 
 readFile
     :: (MonadThrow m, MonadIO m)
-    => FilePath -> m B.ByteString
-readFile fp = do
+    => String -> FilePath -> m B.ByteString
+readFile desc fp = do
     ok <- liftIO $ doesFileExist fp
-    when (not ok) $ throwString $ "failed to load default features: " ++ fp
+    when (not ok) $ throwString $ desc ++ " not found: " ++ show fp
     liftIO $ B.readFile fp
 
 decodeFeatures

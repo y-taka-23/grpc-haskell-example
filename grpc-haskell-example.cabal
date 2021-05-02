@@ -54,6 +54,7 @@ executable server
     , mtl
     , mu-grpc-server  >=0.4.0
     , mu-rpc          >=0.4.0
+    , optparse-applicative
     , safe-exceptions
     , stm
     , time
