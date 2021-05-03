@@ -17,12 +17,13 @@ import           Control.Concurrent.STM
 import           Control.Exception.Safe
     ( MonadThrow
     , SomeException
+    , bracket
     , catch
     , displayException
     , throwString
     )
 import           Control.Monad               ( when )
-import           Control.Monad.IO.Class      ( MonadIO, liftIO )
+import           Control.Monad.IO.Class      ( liftIO )
 import           Control.Monad.Reader        ( MonadReader, ask, runReaderT )
 import           Data.Aeson                  ( eitherDecodeStrict' )
 import qualified Data.ByteString             as B
@@ -44,7 +45,8 @@ import           Data.Time
     , nominalDiffTimeToSeconds
     )
 import           Mu.GRpc.Server
-    ( msgProtoBuf
+    ( gRpcAppTrans
+    , msgProtoBuf
     , runGRpcAppSettings
     , runGRpcAppTLS
     )
@@ -54,8 +56,21 @@ import           Mu.Server
     , method
     , singleService
     )
+import           Network.Socket
+    ( Family(AF_UNIX)
+    , SockAddr(SockAddrUnix)
+    , Socket
+    , SocketType(Stream)
+    , bind
+    , close
+    , getSocketName
+    , listen
+    , maxListenQueue
+    , socket
+    )
 import           Network.Wai.Handler.Warp
     ( defaultSettings
+    , runSettingsSocket
     , setHost
     , setPort
     )
@@ -76,8 +91,8 @@ import           Options.Applicative
     , value
     )
 import           Prelude                     hiding ( readFile )
-import           System.Directory            ( doesFileExist )
 import           System.Exit                 ( die )
+import           System.Posix                ( fileExist, removeLink )
 
 import qualified RouteGuide.Schema as S
 
@@ -88,15 +103,20 @@ main = runServer =<< execParser parser
 
 runServer :: Options -> IO ()
 runServer opts = do
-    let stg = setHost (fromString $ host opts) $ setPort (port opts) $ defaultSettings
     let fatal =  \(e :: SomeException) -> die $ displayException e
     fs <- loadFeatures (jsonDBFile opts) `catch` fatal
     nsv <- atomically $ newTVar M.empty
-    if tls opts then do
+    let settings = setHost (fromString $ host opts) $ setPort (port opts) $ defaultSettings
+    let trans = flip runReaderT (Server fs nsv)
+    if unix opts /= "" then do
+        let runSocket st app sock = runSettingsSocket st sock app
+        bracket (createSocket $ unix opts) removeSocket $
+            runSocket settings (gRpcAppTrans msgProtoBuf trans server)
+    else if tls opts then do
         cred <- loadTLSSettings (certFile opts) (keyFile opts) `catch` fatal
-        runGRpcAppTLS msgProtoBuf cred stg (flip runReaderT (Server fs nsv)) server
+        runGRpcAppTLS msgProtoBuf cred settings trans server
     else do
-        runGRpcAppSettings msgProtoBuf stg (flip runReaderT (Server fs nsv)) server
+        runGRpcAppSettings msgProtoBuf settings trans server
 
 data Options = Options {
       tls        :: Bool
@@ -105,6 +125,7 @@ data Options = Options {
     , jsonDBFile :: FilePath
     , host       :: String
     , port       :: Int
+    , unix       :: FilePath
     }
 
 options :: Parser Options
@@ -127,6 +148,9 @@ options = Options <$>
     <*> option auto (
                long "port" <>  metavar "int" <> value 10000
             <> help "The server port")
+    <*> strOption (
+               long "unix" <>  metavar "string" <> value ""
+            <> help "The unix domain socket")
 
 server
     :: (MonadServer m, MonadReader Server m)
@@ -196,25 +220,40 @@ routeChat src sink = do
                     pure ns
                 pure $ reverse appended
 
-loadFeatures
-    :: (MonadThrow m, MonadIO m)
-    => FilePath -> m Features
+createSocket :: FilePath -> IO Socket
+createSocket fp = do
+    removeIfExists fp
+    sock <- socket AF_UNIX Stream 0
+    bind sock $ SockAddrUnix fp
+    listen sock maxListenQueue
+    pure sock
+
+removeSocket :: Socket -> IO ()
+removeSocket sock = do
+    nm <- getSocketName sock
+    close sock
+    case nm of
+        SockAddrUnix fp -> removeIfExists fp
+        _               -> pure ()
+
+removeIfExists :: FilePath -> IO ()
+removeIfExists fp = do
+    exists <- fileExist fp
+    when exists $ removeLink fp
+
+loadFeatures :: FilePath -> IO Features
 loadFeatures fp = do
     readFile "json db file" fp >>= decodeFeatures
 
-loadTLSSettings
-    :: (MonadThrow m, MonadIO m)
-    => FilePath -> FilePath -> m TLSSettings
+loadTLSSettings :: FilePath -> FilePath -> IO TLSSettings
 loadTLSSettings cert key =
     tlsSettingsMemory <$> readFile "cert file" cert <*> readFile "key file" key
 
-readFile
-    :: (MonadThrow m, MonadIO m)
-    => String -> FilePath -> m B.ByteString
+readFile :: String -> FilePath -> IO B.ByteString
 readFile desc fp = do
-    ok <- liftIO $ doesFileExist fp
-    when (not ok) $ throwString $ desc ++ " not found: " ++ show fp
-    liftIO $ B.readFile fp
+    exists <- fileExist fp
+    when (not exists) $ throwString $ desc ++ " not found: " ++ show fp
+    B.readFile fp
 
 decodeFeatures
     :: (MonadThrow m)
